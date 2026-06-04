@@ -1292,7 +1292,7 @@ erpnext.TransactionController = class TransactionController extends erpnext.taxe
 			["Purchase Order", "Purchase Receipt", "Purchase Invoice"].includes(this.frm.doctype) &&
 			!this.frm.doc.shipping_address
 		) {
-			let is_drop_ship = me.frm.doc.items.some((item) => item.delivered_by_supplier);
+			const is_drop_ship = me.frm.doc.items.some((item) => item.delivered_by_supplier);
 
 			if (!is_drop_ship) {
 				erpnext.utils.get_shipping_address(this.frm, function () {
@@ -2266,6 +2266,8 @@ erpnext.TransactionController = class TransactionController extends erpnext.taxe
 			for (const [key, value] of Object.entries(child)) {
 				if (!["doctype", "name"].includes(key)) {
 					if (key === "price_list_rate") {
+						const doc = frappe.get_doc(child.doctype, child.name);
+						if (doc) doc.price_list_rate = value; // silent update so rate trigger uses correct value
 						frappe.model.set_value(child.doctype, child.name, "rate", value);
 					}
 
@@ -2927,10 +2929,28 @@ erpnext.TransactionController = class TransactionController extends erpnext.taxe
 			method: "erpnext.controllers.stock_controller.check_item_quality_inspection",
 			args: {
 				doctype: this.frm.doc.doctype,
+				docstatus: this.frm.doc.docstatus,
 				items: this.frm.doc.items,
 			},
 			freeze: true,
 			callback: function (r) {
+				if (r.message.length == 0) {
+					let type = inspection_type === "Incoming" ? "Purchase" : "Delivery";
+					let fieldname =
+						inspection_type === "Incoming"
+							? "Inspection Required before Purchase"
+							: "Inspection Required before Delivery";
+
+					frappe.msgprint({
+						title: __("Quality Inspection Not Configured"),
+						message: __(`Enable <b>{0}</b> on the Item master to proceed with {1} inspection.`, [
+							fieldname,
+							type,
+						]),
+					});
+					return;
+				}
+
 				r.message.forEach((item) => {
 					if (me.has_inspection_required(item)) {
 						let dialog_items = dialog.fields_dict.items;
